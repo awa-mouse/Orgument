@@ -11,7 +11,7 @@ const FRAMES: u32 = 16;
 const SAMPLE_HZ: f64 = 44_100.0;
 
 pub enum UiToSynthMessage {
-   ChangeFreq(f64),
+   ChangeFreq(u32, f64),
 }
 
 pub fn run_with<F: FnOnce(mpsc::Sender<UiToSynthMessage>)>(f: F) -> Result<(), pa::Error> {
@@ -42,7 +42,7 @@ pub fn run_with<F: FnOnce(mpsc::Sender<UiToSynthMessage>)>(f: F) -> Result<(), p
 
       if let Ok(msg) = ui_rx.try_recv() {
          match msg {
-            UiToSynthMessage::ChangeFreq(freq) => {
+            UiToSynthMessage::ChangeFreq(track, freq) => {
                if let DspNode::Synth{ref mut phase, ref mut synth_hz} = graph[synth] {
                   *phase = 0.0;
                   *synth_hz = freq;

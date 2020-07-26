@@ -31,35 +31,35 @@ impl KeyMapper {
          KeyCode::Period,
          KeyCode::Slash,
          KeyCode::Apostrophe,
+         KeyCode::RShift,
       ].iter().enumerate().for_each( |(k, &code)| {
-         keymap.insert(code, Effectful::ChangePitch(k as f64 - 1.0));
+         keymap.insert(code, Effectful::ChangePitch(0, k as f64 - 1.0));
       } );
 
       [  KeyCode::Key1,
          KeyCode::Q,
          KeyCode::Key2,
          KeyCode::W,
-         KeyCode::Key3,
          KeyCode::E,
+         KeyCode::Key4,
          KeyCode::R,
          KeyCode::Key5,
          KeyCode::T,
-         KeyCode::Key6,
          KeyCode::Y,
          KeyCode::Key7,
          KeyCode::U,
+         KeyCode::Key8,
          KeyCode::I,
          KeyCode::Key9,
          KeyCode::O,
-         KeyCode::Key0,
          KeyCode::P,
+         KeyCode::Minus,
          KeyCode::LBracket,
          KeyCode::Equals,
          KeyCode::RBracket,
-         KeyCode::Backspace,
          KeyCode::Backslash,
       ].iter().enumerate().for_each( |(k, &code)| {
-         keymap.insert(code, Effectful::ChangePitch(k as f64 + 11.0));
+         keymap.insert(code, Effectful::ChangePitch(1, k as f64 + 11.0));
       } );
 
       Self{keymap}
