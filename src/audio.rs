@@ -2,12 +2,12 @@
 
 use crate::ui::SynthToUiMessage;
 
-use dsp::{sample::ToFrameSliceMut, Frame, FromSample, Graph, Node, Sample};
 use portaudio as pa;
 use std::sync::mpsc;
+use sample::{Sample, FromSample};
 
 const CHANNELS: usize = 2;
-const FRAMES: u32 = 16;
+const FRAMES: u32 = 64;
 const SAMPLE_HZ: f64 = 44_100.0;
 
 pub enum UiToSynthMessage {
@@ -16,13 +16,13 @@ pub enum UiToSynthMessage {
 
 pub fn run_with<F: FnOnce(mpsc::Sender<UiToSynthMessage>)>(f: F) -> Result<(), pa::Error> {
    // Construct our dsp graph.
-   let mut graph = Graph::new();
+   // let mut graph = Graph::new();
 
    // Construct our fancy Synth and add it to the graph!
-   let synth = graph.add_node(DspNode::Synth{phase: 0.0, synth_hz: 440.0});
+   // let synth = graph.add_node(DspNode::Synth{phase: 0.0, synth_hz: 440.0});
 
    // Set the synth as the master node for the graph.
-   graph.set_master(Some(synth));
+   // graph.set_master(Some(synth));
 
    // We'll use this to count down from three seconds and then break from the loop.
    let mut timer: f64 = 0.0;
@@ -32,24 +32,22 @@ pub fn run_with<F: FnOnce(mpsc::Sender<UiToSynthMessage>)>(f: F) -> Result<(), p
 
    // The callback we'll use to pass to the Stream. It will request audio from our graph.
    let callback = move |pa::OutputStreamCallbackArgs { buffer, .. }| {
-      let buffer: &mut [[f32; CHANNELS]] = buffer.to_frame_slice_mut().unwrap();
+      // let buffer: &mut [[f32; CHANNELS]] = buffer.to_frame_slice_mut().unwrap();
 
       // Zero the sample buffer.
-      dsp::slice::equilibrium(buffer);
+      // dsp::slice::equilibrium(buffer);
 
       // Request audio from the graph.
-      graph.audio_requested(buffer, SAMPLE_HZ);
+      // graph.audio_requested(buffer, SAMPLE_HZ);
 
       if let Ok(msg) = ui_rx.try_recv() {
-         match msg {
+         /* match msg {
             UiToSynthMessage::ChangeFreq(track, freq) => {
-               if let DspNode::Synth{ref mut phase, ref mut synth_hz} = graph[synth] {
-                  *phase = 0.0;
-                  *synth_hz = freq;
-               }
-               else { unreachable!(); }
+               let DspNode::Synth{ref mut phase, ref mut synth_hz} = graph[synth];
+               // *phase = 0.0;
+               *synth_hz = freq;
             },
-         }
+         } */
       }
 
       let dt = FRAMES as f64 / SAMPLE_HZ as f64;
@@ -82,6 +80,7 @@ enum DspNode {
 }
 
 /// Implement the `Node` trait for our DspNode.
+/*
 impl Node<[f32; CHANNELS]> for DspNode {
    fn audio_requested(&mut self, buffer: &mut [[f32; CHANNELS]], sample_hz: f64) {
       match *self {
@@ -93,6 +92,7 @@ impl Node<[f32; CHANNELS]> for DspNode {
       }
    }
 }
+*/
 
 /// Return a sine wave for the given phase.
 fn sine_wave<S: Sample>(phase: f64) -> S

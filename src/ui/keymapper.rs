@@ -53,7 +53,7 @@ impl KeyMapper {
          KeyCode::Key9,
          KeyCode::O,
          KeyCode::P,
-         KeyCode::Minus,
+         KeyCode::Subtract,
          KeyCode::LBracket,
          KeyCode::Equals,
          KeyCode::RBracket,
