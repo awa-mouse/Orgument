@@ -9,6 +9,5 @@ mod audio;
 mod processing;
 
 fn main() {
-   return;
    audio::run_with(|tx| ui::run(tx)).unwrap();
 }

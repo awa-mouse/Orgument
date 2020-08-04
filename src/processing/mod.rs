@@ -1,5 +1,6 @@
 mod flow;
 mod element;
+mod flow_store;
 mod store;
 
 macro_rules! enumerate_prim_types {
@@ -13,19 +14,6 @@ macro_rules! enumerate_prim_types {
 }
 
 mod processor;
-
-macro_rules! unify_prim_types {
-   ($pair:expr, $enum_l:path, $enum_r:path, $default:expr, $callback:ident, $($prim_type:ident),*) => {
-      match $pair {
-         ($enum_l::$pair, $enum_r::$pair) => $callback!($prim_type),
-         _ => $default,
-      }
-   };
-
-   {$pair:expr, $enum_l:path, $enum_r:path, $default:expr, $callback:ident} => {
-      enumerate_prim_types!{unify_prim_types!($pair, $enum_l, $enum_r, $default, $callback)}
-   }
-}
 
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]

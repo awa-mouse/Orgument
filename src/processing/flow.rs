@@ -1,4 +1,4 @@
-use super::{InputNo, OutputNo, Type, element, store::FlowStore};
+use super::{InputNo, OutputNo, Type, element, flow_store::FlowStore};
 
 use std::collections::BTreeMap;
 use linear_map::LinearMap;
@@ -16,7 +16,7 @@ pub struct Flow {
 }
 
 impl Flow {
-   pub fn new() -> Self {
+   pub(super) fn new() -> Self {
       Self {
          graph: StableDag::new(),
          visit_order: Vec::new(),
@@ -25,23 +25,23 @@ impl Flow {
       }
    }
 
-   pub fn add_element(&mut self, element: element::Element) -> NodeIx {
+   pub(super) fn add_element(&mut self, element: element::Element) -> NodeIx {
       self.graph.add_node(Node::Element(element))
    }
 
-   pub fn add_input(&mut self, ty: Type) -> NodeIx {
+   pub(super) fn add_input(&mut self, ty: Type) -> NodeIx {
       let no = next_no(&self.input_types);
       self.input_types.insert(no, ty);
       self.graph.add_node(Node::Input{no, ty})
    }
 
-   pub fn add_output(&mut self, ty: Type) -> NodeIx {
+   pub(super) fn add_output(&mut self, ty: Type) -> NodeIx {
       let no = next_no(&self.output_types);
       self.output_types.insert(no, ty);
       self.graph.add_node(Node::Output{no, ty})
    }
 
-   pub fn remove_node(&mut self, node_ix: NodeIx) -> Option<Node> {
+   pub(super) fn remove_node(&mut self, node_ix: NodeIx) -> Option<Node> {
       self.graph.remove_node(node_ix).map(|node| {
          self.update_visit_order();
          match node {
@@ -53,16 +53,23 @@ impl Flow {
       })
    }
 
-   pub fn add_edge(&mut self, source_node: NodeIx, output_no: OutputNo, target_node: NodeIx, input_no: InputNo) -> Result<EdgeIx, WouldCycle> {
-      self.graph.add_edge(source_node, target_node, Edge{output_no, input_no})
+   pub(super) fn add_edge(&mut self, source_node: NodeIx, output_no: OutputNo, target_node: NodeIx, input_no: InputNo, store: &FlowStore)
+      -> Result<(EdgeIx, Type), EdgeError>
+   {
+      let ty = self.graph[source_node].output_types(store)[&output_no];
+      if self.graph[target_node].input_types(store)[&input_no] != ty {
+         return Err(EdgeError::TypeMismatch)
+      }
+
+      self.graph.add_edge(source_node, target_node, Edge{output_no, input_no, ty})
          .map(|edge| {
             self.update_visit_order();
-            edge
+            (edge, ty)
          })
-         .map_err(|_| WouldCycle)
+         .map_err(|_| EdgeError::WouldCycle)
    }
 
-   pub fn remove_edge(&mut self, edge: EdgeIx) -> bool {
+   pub(super) fn remove_edge(&mut self, edge: EdgeIx) -> bool {
       if self.graph.remove_edge(edge).is_some() {
          self.update_visit_order();
          true
@@ -91,6 +98,8 @@ impl Flow {
    }
 
    pub(super) fn visit_order(&self) -> impl Iterator<Item=&NodeIx> { self.visit_order.iter() }
+
+   pub(super) fn graph(&self) -> &StableDag<Node, Edge> { &self.graph }
 
    pub fn node(&self, node_ix: NodeIx) -> &Node { &self.graph[node_ix] }
 
@@ -127,7 +136,10 @@ fn next_no<T: From<u32> + Into<u32> + Ord + Copy>(types: &BTreeMap<T, Type>) -> 
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
-pub struct WouldCycle;
+pub enum EdgeError {
+   WouldCycle,
+   TypeMismatch,
+}
 
 #[derive(Clone, Debug)]
 pub enum Node {
@@ -154,7 +166,8 @@ impl Node {
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
-struct Edge {
+pub struct Edge {
    output_no: OutputNo,
    input_no: InputNo,
+   ty: Type,
 }

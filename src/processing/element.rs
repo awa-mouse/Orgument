@@ -1,4 +1,7 @@
-use super::{flow::Flow, store::{FlowStore, FlowId}, Type, InputNo, OutputNo, processor::{ProcessorStore, Buffer}};
+use super::{
+   flow::Flow, flow_store::{FlowStore, FlowId},
+   Type, InputNo, OutputNo, processor::{ProcessorStore, Buffer}
+};
 
 use linear_map::{LinearMap, set::LinearSet};
 use std::cell::{Ref, RefMut};

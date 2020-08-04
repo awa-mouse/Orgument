@@ -1,4 +1,10 @@
-use super::{flow::{Flow, Node, EdgeIx}, Type, PrimType, store::{FlowStore, FlowId}, element::Element, OutputNo, InputNo};
+use super::{
+   flow::{Flow, Node, EdgeIx},
+   Type, PrimType,
+   flow_store::{FlowStore, FlowId},
+   element::Element,
+   OutputNo, InputNo
+};
 
 use intmap::IntMap;
 use std::cell::{RefCell};
@@ -9,20 +15,24 @@ pub struct ProcessorStore {
    processors: IntMap<Processor>,
 }
 impl ProcessorStore {
-   pub fn new() -> Self{ Self{processors: IntMap::new()} }
+   pub(super) fn new() -> Self{ Self{processors: IntMap::new()} }
 
-   pub fn compute_outplace<BufferRefMut>(
-      &self, flow_id: FlowId, output: &mut LinearMap<OutputNo, BufferRefMut>, input: &LinearMap<InputNo, BufferRefMut>, buffer_sz: usize,
+   pub(super) fn compute_outplace<BufferRef, BufferRefMut>(
+      &self, flow_id: FlowId, output: &mut LinearMap<OutputNo, BufferRefMut>, input: &LinearMap<InputNo, BufferRef>, buffer_sz: usize,
       flow_store: &FlowStore,
-   ) where BufferRefMut: DerefMut<Target=Buffer>
+   ) where BufferRef: Deref<Target=Buffer>, BufferRefMut: DerefMut<Target=Buffer>
    {
       let flow = &flow_store[flow_id];
       let processor = self.processor(flow_id);
       processor.compute_outplace(output, input, buffer_sz, flow, flow_store, self)
    }
 
-   fn processor(&self, flow_id: FlowId) -> &Processor {
+   pub fn processor(&self, flow_id: FlowId) -> &Processor {
       self.processors.get(flow_id.0).unwrap()
+   }
+
+   pub(super) fn processor_mut(&mut self, flow_id: FlowId) -> &mut Processor {
+      self.processors.get_mut(flow_id.0).unwrap()
    }
 }
 
@@ -30,14 +40,14 @@ pub struct Processor {
    buffers: IntMap<RefCell<Buffer>>,
 }
 impl Processor {
-   pub fn new() -> Self {
+   pub(super) fn new() -> Self {
       Self{buffers: IntMap::new()}
    }
 
-   pub fn compute_outplace<BufferRefMut>(
-      &self, output: &mut LinearMap<OutputNo, BufferRefMut>, input: &LinearMap<InputNo, BufferRefMut>, buffer_sz: usize,
+   fn compute_outplace<BufferRef, BufferRefMut>(
+      &self, output: &mut LinearMap<OutputNo, BufferRefMut>, input: &LinearMap<InputNo, BufferRef>, buffer_sz: usize,
       flow: &Flow, flow_store: &FlowStore, processor_store: &ProcessorStore
-   ) where BufferRefMut: DerefMut<Target=Buffer>
+   ) where BufferRef: Deref<Target=Buffer>, BufferRefMut: DerefMut<Target=Buffer>
    {
       Self::check_buffer_types(input, flow.input_types());
       Self::check_buffer_types(output, flow.output_types());
@@ -83,23 +93,28 @@ impl Processor {
                );
             }
             Node::Input{no, ..} => {
-               let in_buffer = &input[no];
-               flow.output_edges(node_ix, OutputNo(0)).for_each(|edge_ix| self.buffer(edge_ix).borrow_mut().clone_from(in_buffer));
-            }
-            Node::Output{no, ..} => {
-               let out_buffer = output.get_mut(no).unwrap();
-               out_buffer.update_size(buffer_sz);
-
-               let mut edges = flow.input_edges(node_ix, InputNo(0));
-               if let Some(head) = edges.next() {
-                  let tail = edges;
-                  out_buffer.clone_from(&self.buffer(head).borrow());
-                  tail.for_each(|edge_ix| out_buffer.merge(&self.buffer(edge_ix).borrow()));
+               let buffers = flow.output_edges(node_ix, OutputNo(0)).map(|edge_ix| self.buffer(edge_ix).borrow_mut());
+               if let Some(in_buffer) = input.get(no) {
+                  buffers.for_each(|mut buffer| buffer.clone_from(in_buffer));
                }
                else {
-                  out_buffer.clear();
+                  buffers.for_each(|mut buffer| buffer.clear());
                }
-            },
+            }
+            Node::Output{no, ..} =>
+               if let Some(out_buffer) = output.get_mut(no) {
+                  out_buffer.update_size(buffer_sz);
+
+                  let mut edges = flow.input_edges(node_ix, InputNo(0));
+                  if let Some(head) = edges.next() {
+                     let tail = edges;
+                     out_buffer.clone_from(&self.buffer(head).borrow());
+                     tail.for_each(|edge_ix| out_buffer.merge(&self.buffer(edge_ix).borrow()));
+                  }
+                  else {
+                     out_buffer.clear();
+                  }
+               }
          }
       })
    }
@@ -116,6 +131,15 @@ impl Processor {
 
    fn buffer(&self, edge_ix: EdgeIx) -> &RefCell<Buffer> {
       self.buffers.get(edge_ix.index() as u64).unwrap()
+   }
+
+   pub(super) fn add_edge(&mut self, edge_ix: EdgeIx, ty: Type) {
+      let result = self.buffers.insert(edge_ix.index() as u64, RefCell::new(Buffer::new(ty)));
+      assert!(result);
+   }
+
+   pub(super) fn remove_edge(&mut self, edge_ix: EdgeIx) {
+      self.buffers.remove(edge_ix.index() as u64).unwrap();
    }
 }
 
