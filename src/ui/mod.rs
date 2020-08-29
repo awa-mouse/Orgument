@@ -2,7 +2,7 @@ mod keymapper;
 mod effect;
 
 use keymapper::KeyMapper;
-use crate::audio::UiToSynthMessage;
+use crate::UiToSynthMessage;
 
 use std::sync::mpsc;
 use iced::{button, Button, Column, Text, executor, Application, Command, Element, Settings, Subscription};

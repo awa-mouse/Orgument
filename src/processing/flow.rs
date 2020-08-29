@@ -1,8 +1,9 @@
-use super::{InputNo, OutputNo, Type, element, flow_store::FlowStore};
+use super::{InputNo, OutputNo, Type, element, flow_store::FlowStore, prim_element::PrimElement};
 
 use std::collections::BTreeMap;
 use linear_map::LinearMap;
 use daggy::stable_dag::{StableDag, NodeIndex, EdgeIndex, Walker};
+use daggy::petgraph::{visit::IntoNodeReferences, stable_graph::NodeReferences};
 
 pub type NodeIx = NodeIndex<u32>;
 pub type EdgeIx = EdgeIndex<u32>;
@@ -29,16 +30,16 @@ impl Flow {
       self.graph.add_node(Node::Element(element))
    }
 
-   pub(super) fn add_input(&mut self, ty: Type) -> NodeIx {
+   pub(super) fn add_input(&mut self, ty: Type) -> (InputNo, NodeIx) {
       let no = next_no(&self.input_types);
       self.input_types.insert(no, ty);
-      self.graph.add_node(Node::Input{no, ty})
+      ( no, self.graph.add_node(Node::Input{no, ty}) )
    }
 
-   pub(super) fn add_output(&mut self, ty: Type) -> NodeIx {
+   pub(super) fn add_output(&mut self, ty: Type) -> (OutputNo, NodeIx) {
       let no = next_no(&self.output_types);
       self.output_types.insert(no, ty);
-      self.graph.add_node(Node::Output{no, ty})
+      ( no, self.graph.add_node(Node::Output{no, ty}) )
    }
 
    pub(super) fn remove_node(&mut self, node_ix: NodeIx) -> Option<Node> {
@@ -77,6 +78,14 @@ impl Flow {
       else { false }
    }
 
+   pub(super) fn prim_elements<'a>(&'a self, flow_store: &'a FlowStore) -> impl Iterator<Item=PrimElement> + 'a {
+      self.graph.node_references().flat_map(move |(_,node)| match node {
+         Node::Element(element::Element::Prim(pe_id)) => Box::new(std::iter::once(*pe_id)) as Box<dyn Iterator<Item=PrimElement>>,
+         Node::Element(element::Element::Flow(flow_id)) => Box::new(flow_store[*flow_id].prim_elements(flow_store)),
+         _ => Box::new(std::iter::empty()),
+      })
+   }
+
    pub fn input_types<'a>(&'a self) -> impl Iterator<Item = (InputNo, Type)> + 'a {
       self.input_types.iter().map(|(k,v)| (*k,*v))
    }
@@ -112,7 +121,7 @@ impl Flow {
    }
 
    pub fn output_edges_with_node<'a>(&'a self, node_ix: NodeIx, output_no: OutputNo) -> impl Iterator<Item = (EdgeIx, NodeIx)> + 'a {
-      self.graph.parents(node_ix).iter(&self.graph).filter(move |(edge,_)| self.graph[*edge].output_no == output_no)
+      self.graph.children(node_ix).iter(&self.graph).filter(move |(edge,_)| self.graph[*edge].output_no == output_no)
    }
 
    pub fn output_edges<'a>(&'a self, node_ix: NodeIx, output_no: OutputNo) -> impl Iterator<Item = EdgeIx> + 'a {

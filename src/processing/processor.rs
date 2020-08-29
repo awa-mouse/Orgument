@@ -1,21 +1,23 @@
 use super::{
    flow::{Flow, Node, EdgeIx},
-   Type, PrimType,
+   Type, PrimType, Value,
    flow_store::{FlowStore, FlowId},
-   element::Element,
+   prim_element::{PrimElement, PrimElementProcessor, mk_prim_element_processor},
    OutputNo, InputNo
 };
 
 use intmap::IntMap;
-use std::cell::{RefCell};
+use std::cell::{RefCell, RefMut};
 use linear_map::LinearMap;
 use std::ops::{Deref, DerefMut};
+use std::collections::HashMap;
 
 pub struct ProcessorStore {
    processors: IntMap<Processor>,
+   prim_element_processors: HashMap<PrimElement, (Box<RefCell<dyn PrimElementProcessor + Send>>, u32)>,
 }
 impl ProcessorStore {
-   pub(super) fn new() -> Self{ Self{processors: IntMap::new()} }
+   pub(super) fn new() -> Self{ Self{processors: IntMap::new(), prim_element_processors: HashMap::new()} }
 
    pub(super) fn compute_outplace<BufferRef, BufferRefMut>(
       &self, flow_id: FlowId, output: &mut LinearMap<OutputNo, BufferRefMut>, input: &LinearMap<InputNo, BufferRef>, buffer_sz: usize,
@@ -27,12 +29,48 @@ impl ProcessorStore {
       processor.compute_outplace(output, input, buffer_sz, flow, flow_store, self)
    }
 
+   pub(super) fn compute_outplace_prim(
+      &self, prim_element_id: PrimElement,
+      output: &mut LinearMap<OutputNo, RefMut<Buffer>>, input: &LinearMap<InputNo, RefMut<Buffer>>,
+      buffer_sz: usize, flow_store: &FlowStore,
+   ) {
+      self.prim_element_processors[&prim_element_id].0.borrow_mut().compute_outplace(output, input, buffer_sz, flow_store);
+   }
+
    pub fn processor(&self, flow_id: FlowId) -> &Processor {
       self.processors.get(flow_id.0).unwrap()
    }
 
    pub(super) fn processor_mut(&mut self, flow_id: FlowId) -> &mut Processor {
       self.processors.get_mut(flow_id.0).unwrap()
+   }
+
+   pub(super) fn add(&mut self, flow_id: FlowId) {
+      let result = self.processors.insert(flow_id.0, Processor::new());
+      assert!(result);
+   }
+
+   pub(super) fn remove(&mut self, flow_id: FlowId) -> Processor {
+      self.processors.remove(flow_id.0).unwrap()
+   }
+
+   pub(super) fn use_prim_element_processor(&mut self, prim_element_id: PrimElement) {
+      if let Some(pep) = self.prim_element_processors.get_mut(&prim_element_id) {
+         pep.1 += 1;
+      }
+      else {
+         self.prim_element_processors.insert(prim_element_id, (mk_prim_element_processor(prim_element_id), 0));
+      }
+   }
+
+   pub(super) fn free_prim_element_processor(&mut self, prim_element_id: PrimElement) {
+      let rc = &mut self.prim_element_processors.get_mut(&prim_element_id).unwrap().1;
+      if *rc == 0 {
+         self.prim_element_processors.remove(&prim_element_id);
+      }
+      else {
+         *rc -= 1;
+      }
    }
 }
 
@@ -116,7 +154,7 @@ impl Processor {
                   }
                }
          }
-      })
+      });
    }
 
    fn check_buffer_types<T,U,I>(buffer: &LinearMap<T,U>, types: I)
@@ -150,7 +188,7 @@ pub enum Buffer {
    Event(GenericEventBuffer),
 }
 impl Buffer {
-   fn new(ty: Type) -> Self {
+   pub fn new(ty: Type) -> Self {
       match ty {
          Type::Sampled{ty, ..} => Self::Sampled(GenericSampledBuffer::new(ty)),
          Type::Event(ty) => Self::Event(GenericEventBuffer::new(ty)),
@@ -179,7 +217,7 @@ impl Buffer {
       }
    }
 
-   fn clear(&mut self) {
+   pub(super) fn clear(&mut self) {
       match self {
          Self::Sampled(x) => x.clear(),
          Self::Event(x) => x.clear(),
@@ -221,9 +259,9 @@ macro_rules! impl_generic_sampled_buffer {
             }
          }
 
-         fn update_size(&mut self, sz: usize) {
-            if self.len() != sz {
-               self.resize(sz)
+         pub(super) fn update_size(&mut self, sz: usize) {
+            match self {
+               $( Self::$prim_type(buffer) => buffer.update_size(sz), )*
             }
          }
 
@@ -234,9 +272,19 @@ macro_rules! impl_generic_sampled_buffer {
             }
          }
 
-         fn clear(&mut self) {
+         pub(super) fn clear(&mut self) {
             match self {
                $( Self::$prim_type(buf) => buf.clear(), )*
+            }
+         }
+
+         pub(super) fn fill(&mut self, value: Value) {
+            match (self, value) {
+               (Self::F32(x), Value::F32(y)) => x.fill(y.into()),
+               (Self::C32(x), Value::C32(y)) => x.fill(num::complex::Complex::new(y.re.into(), y.im.into())),
+               (Self::U32(x), Value::U32(y)) => x.fill(y),
+               (Self::I32(x), Value::I32(y)) => x.fill(y),
+               _ => unreachable!(),
             }
          }
       }
@@ -246,7 +294,7 @@ enumerate_prim_types!{impl_generic_sampled_buffer}
 
 #[derive(Clone, Debug)]
 pub struct SampledBuffer<T> {
-   samples: Vec<T>,
+   pub samples: Vec<T>,
 }
 impl<T> SampledBuffer<T> {
    fn new() -> Self { Self{samples: Vec::new()} }
@@ -255,14 +303,24 @@ impl<T> SampledBuffer<T> {
       self.samples.resize(sz, Default::default())
    }
 
-   fn len(&self) -> usize { self.len() }
+   fn len(&self) -> usize { self.samples.len() }
+
+   pub(super) fn update_size(&mut self, sz: usize) where T: Default + Clone {
+      if self.len() != sz {
+         self.resize(sz)
+      }
+   }
 
    fn merge<'a>(&mut self, other: &'a Self) where T: std::ops::AddAssign<&'a T> {
       self.samples.iter_mut().zip(&other.samples).for_each(|(x,y)| *x += y);
    }
 
-   fn clear(&mut self) where T: Default {
+   pub(super) fn clear(&mut self) where T: Default {
       self.samples.iter_mut().for_each(|x| *x = Default::default());
+   }
+
+   fn fill(&mut self, value: T) where T: Copy {
+      self.samples.iter_mut().for_each(|x| *x = value);
    }
 }
 
@@ -296,7 +354,7 @@ macro_rules! impl_generic_event_buffer {
             }
          }
 
-         fn clear(&mut self) {
+         pub(super) fn clear(&mut self) {
             match self {
                $( Self::$prim_type(buf) => buf.clear(), )*
             }
@@ -317,7 +375,7 @@ impl<T> EventBuffer<T> {
       self.events.extend(other.events.iter().cloned())
    }
 
-   fn clear(&mut self) {
+   pub(super) fn clear(&mut self) {
       self.events.clear();
    }
 }

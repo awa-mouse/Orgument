@@ -1,7 +1,7 @@
 use super::{
    flow_store::{FlowStore, FlowId},
    flow::{self, Flow, NodeIx, EdgeIx, EdgeError},
-   processor::{ProcessorStore, Buffer},
+   processor::{ProcessorStore, Buffer, Processor},
    element,
    Type, OutputNo, InputNo,
 };
@@ -23,15 +23,28 @@ impl Store {
    pub fn flow_store(&self) -> &FlowStore { &self.flows }
    pub fn processor_store(&self) -> &ProcessorStore { &self.processors }
 
+   pub fn add_flow(&mut self) -> FlowId {
+      let flow_id = self.flows.add();
+      self.processors.add(flow_id);
+      flow_id
+   }
+
+   pub fn remove_flow(&mut self, flow_id: FlowId) -> (Flow, Processor) {
+      (self.flows.remove(flow_id), self.processors.remove(flow_id))
+   }
+
    pub fn add_element(&mut self, flow_id: FlowId, element: element::Element) -> NodeIx {
+      if let element::Element::Prim(pe_id) = element {
+         self.processors.use_prim_element_processor(pe_id);
+      }
       self.flows[flow_id].add_element(element)
    }
 
-   pub fn add_input(&mut self, flow_id: FlowId, ty: Type) -> NodeIx {
+   pub fn add_input(&mut self, flow_id: FlowId, ty: Type) -> (InputNo, NodeIx) {
       self.flows[flow_id].add_input(ty)
    }
 
-   pub fn add_output(&mut self, flow_id: FlowId, ty: Type) -> NodeIx {
+   pub fn add_output(&mut self, flow_id: FlowId, ty: Type) -> (OutputNo, NodeIx) {
       self.flows[flow_id].add_output(ty)
    }
 
@@ -41,7 +54,13 @@ impl Store {
       let graph = flow.graph();
       graph.parents(node_ix).iter(graph).chain(graph.children(node_ix).iter(graph))
          .for_each(|(edge_ix, _)| processors.processor_mut(flow_id).remove_edge(edge_ix));
-      flow.remove_node(node_ix)
+
+      flow.remove_node(node_ix).map(|node| {
+         if let flow::Node::Element(element::Element::Prim(pe_id)) = node {
+            self.processors.free_prim_element_processor(pe_id);
+         }
+         node
+      })
    }
 
    pub fn add_edge(&mut self, flow_id: FlowId, source: NodeIx, output_no: OutputNo, target: NodeIx, input_no: InputNo)
@@ -57,7 +76,7 @@ impl Store {
       self.flows[flow_id].remove_edge(edge_ix)
    }
 
-   pub(super) fn compute_outplace<BufferRefMut>(
+   pub fn compute_outplace<BufferRefMut>(
       &self, flow_id: FlowId, output: &mut LinearMap<OutputNo, BufferRefMut>, input: &LinearMap<InputNo, BufferRefMut>, buffer_sz: usize,
    ) where BufferRefMut: DerefMut<Target=Buffer>
    {

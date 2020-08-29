@@ -1,8 +1,3 @@
-mod flow;
-mod element;
-mod flow_store;
-mod store;
-
 macro_rules! enumerate_prim_types {
    {$callback:ident ! ($($prefix:expr),*)} => {
       $callback!($($prefix),* F32, C32, U32, I32);
@@ -13,7 +8,16 @@ macro_rules! enumerate_prim_types {
    }
 }
 
-mod processor;
+pub mod flow;
+pub mod element;
+pub mod flow_store;
+pub mod store;
+pub mod processor;
+pub mod prim_element;
+
+pub use store::Store;
+pub use flow_store::FlowId;
+pub use processor::Buffer;
 
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
@@ -47,4 +51,22 @@ pub enum PrimType {
    C32,
    U32,
    I32,
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
+pub enum Value {
+   F32(eq_float::F32),
+   C32(num::complex::Complex<eq_float::F32>),
+   U32(u32),
+   I32(i32),
+}
+impl Value {
+   pub fn Type(&self) -> PrimType {
+      match self {
+         Self::F32(_) => PrimType::F32,
+         Self::C32(_) => PrimType::C32,
+         Self::U32(_) => PrimType::U32,
+         Self::I32(_) => PrimType::I32,
+      }
+   }
 }

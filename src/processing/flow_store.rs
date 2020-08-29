@@ -15,11 +15,13 @@ impl FlowStore {
    pub fn get(&self, id: FlowId) -> Option<&flow::Flow> { self.flows.get(id.0) }
    pub(super) fn get_mut(&mut self, id: FlowId) -> Option<&mut flow::Flow> { self.flows.get_mut(id.0) }
 
-   pub(super) fn add(&mut self, flow: flow::Flow) -> FlowId {
+   pub(super) fn add(&mut self) -> FlowId {
       let next_id = self.gen_next_id();
-      self.flows.insert(next_id, flow);
+      assert!( self.flows.insert(next_id, flow::Flow::new()) );
       FlowId(next_id)
    }
+
+   pub(super) fn remove(&mut self, id: FlowId) -> flow::Flow { self.flows.remove(id.0).unwrap() }
 
    pub(super) fn alter<T, F: FnOnce(&Self, &mut flow::Flow) -> T>(&mut self, id: FlowId, f: F) -> T {
       let mut flow = self.flows.remove(id.0).unwrap();
@@ -27,8 +29,6 @@ impl FlowStore {
       self.flows.insert(id.0, flow);
       result
    }
-
-   pub(super) fn remove(&mut self, id: FlowId) -> Option<flow::Flow> { self.flows.remove(id.0) }
 
    fn gen_next_id(&mut self) -> u64 {
       assert!(self.flows.len() <= std::u64::MAX as usize);

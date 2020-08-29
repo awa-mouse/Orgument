@@ -1,5 +1,5 @@
 use super::effect::Effectful;
-use crate::audio::UiToSynthMessage;
+use crate::UiToSynthMessage;
 
 use std::sync::mpsc;
 use std::collections::BTreeMap;

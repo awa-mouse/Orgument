@@ -1,4 +1,4 @@
-use crate::audio::UiToSynthMessage;
+use crate::UiToSynthMessage;
 
 use std::sync::mpsc;
 

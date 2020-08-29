@@ -445,6 +445,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "eq-float"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3c02b5d1d1e6ba431b960d4bf971c8b0e2d2942b8cbc577d9bdf9c60fca5d41d"
+
+[[package]]
 name = "euclid"
 version = "0.19.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1503,6 +1509,7 @@ name = "orgument"
 version = "0.1.0"
 dependencies = [
  "daggy",
+ "eq-float",
  "iced",
  "iced_native",
  "intmap",
